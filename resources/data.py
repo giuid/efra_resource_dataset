@@ -17,9 +17,10 @@ from transformers import PreTrainedTokenizer
 from google.cloud import storage
 from google.oauth2 import service_account
 
-DATABASE    = 'c-labs1.efra.summaries_migrated', 'efra.summaries_v2_migrated', 'c-labs1.efra.summaries_v3'
-CREDENTIALS = service_account.Credentials.from_service_account_file('data/service-account-external-efra.json')
-
+#DATABASE    = 'c-labs1.efra.summaries_migrated', 'efra.summaries_v2_migrated', 'c-labs1.efra.summaries_v3'
+#CREDENTIALS = service_account.Credentials.from_service_account_file('data/service-account-external-efra.json')
+CREDENTIALS = ''
+DATABASE = None
 def query_data(sql:str): return pd.read_gbq(sql, credentials=CREDENTIALS)
 
 def get_unique(columns:Union[str, List[str]], db:int=-1):
