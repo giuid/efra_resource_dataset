@@ -5,13 +5,7 @@ from huggingface_hub import login
 from datasets import load_dataset
 os.environ['TRANSFORMERS_CACHE'] = '/home/francomaria.nardini/raid/guidorocchietti/.cache/huggingface'
 os.environ['CUDA_VISIBLE_DEVICES']="3,4,5,6,7"
-api_token =  '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'##'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'
-login(token = api_token)
-efra_summaries = load_dataset('giuid/efra_legal_dataset',  use_auth_token=api_token)
-efra_summaries_df = pd.DataFrame(efra_summaries['train'])
 
-
-#%%
 from resources.data import word_tokenize, SENT_TOKENIZER, HTMLSplitter
 from typing import Callable, List, Dict
 
@@ -57,7 +51,57 @@ def split_text_in_paragraphs(
         remaining_tokens = -1
 
     return " ".join(texts),{'part': parts, 'paragraph': paragraphs, 'tokens': tokens, 'texts': texts}
+
+def prepare_input(texts,tokenizer,instruction = "", assistant = "", max_input_length = 1024):
+    tokenized_instruction = tokenizer.tokenize(instruction)
+    tokenized_assistant = tokenizer.tokenize(assistant)
+
+    prompts = []
+    for txt in texts:
+        max_text_tokens = max_input_length - len(tokenized_instruction) - len(tokenized_assistant)
+        tokenized_txt = tokenizer.tokenize(txt)
+        truncated_text_tokens = tokenized_txt[:max_text_tokens]
+        whole_text_tokenized = tokenized_instruction + truncated_text_tokens + tokenized_assistant
+        prompt = tokenizer.convert_tokens_to_string(whole_text_tokenized)
+        prompts.append(prompt)
+    inputs = tokenizer(
+        prompts,
+        max_length=max_input_length,
+        truncation=True,
+        padding="longest",
+        return_tensors="pt"
+    )
+    return prompts, inputs
+
+def generate_summaries(model, inputs, tokenizer, max_output_length=256, num_beams=4):
+    """
+    Generates summaries using the model.
+
+    Args:
+        model: Pre-trained summarization model.
+        inputs: Tokenized input tensors.
+        tokenizer: Pre-trained tokenizer.
+        max_output_length (int): Maximum length of output summaries.
+        num_beams (int): Beam search width for generation.
+
+    Returns:
+        List[str]: Generated summaries as a list of strings.
+    """
+    with torch.no_grad():
+        outputs = model.generate(
+            input_ids=inputs['input_ids'],
+            attention_mask=inputs['attention_mask'],
+            max_new_tokens=max_output_length,
+            num_beams=num_beams,
+            early_stopping=True
+        )
+    return tokenizer.batch_decode(outputs, skip_special_tokens=True)
 # %%
+api_token =  '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'##'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'
+login(token = api_token)
+efra_summaries = load_dataset('giuid/efra_legal_dataset',  use_auth_token=api_token)
+efra_summaries_df = pd.DataFrame(efra_summaries['train'])
+
 htmls_path = '/home/francomaria.nardini/raid/guidorocchietti/code/efra_git/data/htmls/'
 english_path = os.path.join(htmls_path, 'english')
 original_path = os.path.join(htmls_path, 'original')
@@ -116,29 +160,7 @@ inputs = tokenizer(
 tokenized_inputs = {key: value.to(device) for key, value in inputs.items()}
 
 
-def generate_summaries(model, inputs, tokenizer, max_output_length=256, num_beams=4):
-    """
-    Generates summaries using the model.
 
-    Args:
-        model: Pre-trained summarization model.
-        inputs: Tokenized input tensors.
-        tokenizer: Pre-trained tokenizer.
-        max_output_length (int): Maximum length of output summaries.
-        num_beams (int): Beam search width for generation.
-
-    Returns:
-        List[str]: Generated summaries as a list of strings.
-    """
-    with torch.no_grad():
-        outputs = model.generate(
-            input_ids=inputs['input_ids'],
-            attention_mask=inputs['attention_mask'],
-            max_new_tokens=max_output_length,
-            num_beams=num_beams,
-            early_stopping=True
-        )
-    return tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
 
 cut = 3000
@@ -148,26 +170,6 @@ max_input_length = 1024
 instruction = f"### User:\n I will provide you with a legal document regarding food and risk regulation. I want you to generate a summary of the document. Text: " 
 assistant = f"\n### Summary:\n"
 
-def prepare_input(texts,tokenizer,instruction = "", assistant = "", max_input_length = 1024):
-    tokenized_instruction = tokenizer.tokenize(instruction)
-    tokenized_assistant = tokenizer.tokenize(assistant)
-
-    prompts = []
-    for txt in texts:
-        max_text_tokens = max_input_length - len(tokenized_instruction) - len(tokenized_assistant)
-        tokenized_txt = tokenizer.tokenize(txt)
-        truncated_text_tokens = tokenized_txt[:max_text_tokens]
-        whole_text_tokenized = tokenized_instruction + truncated_text_tokens + tokenized_assistant
-        prompt = tokenizer.convert_tokens_to_string(whole_text_tokenized)
-        prompts.append(prompt)
-    inputs = tokenizer(
-        prompts,
-        max_length=max_input_length,
-        truncation=True,
-        padding="longest",
-        return_tensors="pt"
-    )
-    return prompts, inputs
 
                                                  
 #%%               
@@ -178,8 +180,9 @@ summaries = generate_summaries(model, inputs, tokenizer, max_output_length=cut, 
 # %%
 def clean_output(x):
     splitted = x.split('### User:\n')
-    answers = [x.split('### Assistant:\n')[-1] for x in splitted]
+    answers = [x.split('### Summary:\n')[-1] for x in splitted]
     last_dot = ['.'.join(x.split('.')[:-1]) + '.' for x in answers]
     return ''.join(last_dot)[1:]
-cleaned_summaries = [x[len(y):] for x,y in zip(summaries,prompts)]
+cleaned_summaries = [clean_output(x) for x in summaries]
+print(cleaned_summaries)
 # %%
