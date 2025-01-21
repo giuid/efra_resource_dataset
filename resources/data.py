@@ -57,6 +57,39 @@ class HTMLSplitter(HTMLParser):
         self.convert_charrefs= True
         self.text = ''
 
+    def __call__(self, html:str, window:int, tokenize:Callable[[str], List]=word_tokenize):
+        parts, paragraphs, tokens, texts = [], [], [], []
+
+        self.feed(html)
+        html = self.get_data()
+
+        # split text in paragraphs:
+        part = 0
+        cursor = 0
+        remaining_tokens = -1
+        for paragraph, txt in enumerate(html.split('\n\n')):
+            for i,j in SENT_TOKENIZER.span_tokenize(txt):
+                sentence = tokenize(txt[i:j+1])
+                remaining_tokens -= len(sentence) - 1
+
+                if remaining_tokens <= 0:
+                    parts.append(str(part))
+                    paragraphs.append(str(paragraph))
+                    tokens.append(sentence[:window])
+                    texts.append(txt[i:j+1])
+                    remaining_tokens = window - len(sentence) + 1
+                        
+                    part += 1
+                    cursor = i
+
+                else: 
+                    tokens[-1].extend(sentence[:window])
+                    texts[-1] = txt[cursor:j+1]
+
+            remaining_tokens = -1
+
+        return {'part':parts, 'paragraph':paragraphs, 'tokens':tokens, 'texts':texts}
+
     @property
     def ends_with_space(self):
         if len(self.text) == 0: return True
@@ -130,36 +163,7 @@ def retrieve_url(url:str, window:int, tokenize:Callable[[str], List]=word_tokeni
     html = str(bucket.blob(url[18:]).download_as_string())
 
     # parse html:
-    parser = HTMLSplitter()
-    parser.feed(html)
-    html = parser.get_data()
-
-    # split text in paragraphs:
-    part = 0
-    cursor = 0
-    remaining_tokens = -1
-    for paragraph, txt in enumerate(html.split('\n\n')):
-        for i,j in SENT_TOKENIZER.span_tokenize(txt):
-            sentence = tokenize(txt[i:j+1])
-            remaining_tokens -= len(sentence) - 1
-
-            if remaining_tokens <= 0:
-                parts.append(str(part))
-                paragraphs.append(str(paragraph))
-                tokens.append(sentence[:window])
-                texts.append(txt[i:j+1])
-                remaining_tokens = window - len(sentence) + 1
-                    
-                part += 1
-                cursor = i
-
-            else: 
-                tokens[-1].extend(sentence[:window])
-                texts[-1] = txt[cursor:j+1]
-
-        remaining_tokens = -1
-
-    return {'part':parts, 'paragraph':paragraphs, 'tokens':tokens, 'texts':texts}
+    return HTMLSplitter()(html=html, window=window, tokenize=tokenize)
 
 
 def load_data(columns:Union[str, List[str]], window:int, tokenize:Callable[[List[str]], List]=word_tokenize, limit:Optional[int]=None, where:Optional[str]=None, db:int=-1):
