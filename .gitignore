@@ -5,5 +5,7 @@
 data/*/**
 plots/**
 results/**
+resources/bart_score.py
+venv/**
 summaries/**
 code/efra_old/**
