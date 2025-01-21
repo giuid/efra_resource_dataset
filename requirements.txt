@@ -1,9 +1,13 @@
 nltk
 numpy
 sentence-transformers
-torch
-transformers
 pandas
+datasets
+transformers
+torch
+huggingface_hub
+rouge_score
+longdocfactscore
 matplotlib
 rouge_score
 longdocfactscore

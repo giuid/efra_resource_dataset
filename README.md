@@ -24,7 +24,7 @@ This script processes legal documents, splits them into paragraphs, tokenizes th
 
 1. **Install dependencies**:
    ```bash
-   pip install pandas datasets transformers torch huggingface_hub
+   pip install -r ./requirements.txt
 2. **Set up environment variables:
 	-	TRANSFORMERS_CACHE: Path to the Hugging Face transformers cache.
 	-	CUDA_VISIBLE_DEVICES: List of GPUs to use for processing.
