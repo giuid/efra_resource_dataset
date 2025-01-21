@@ -1,0 +1,10 @@
+nltk
+numpy
+sentence-transformers
+torch
+transformers
+pandas
+matplotlib
+rouge_score
+longdocfactscore
+tqdm
