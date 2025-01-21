@@ -6,51 +6,8 @@ from datasets import load_dataset
 os.environ['TRANSFORMERS_CACHE'] = '/home/francomaria.nardini/raid/guidorocchietti/.cache/huggingface'
 os.environ['CUDA_VISIBLE_DEVICES']="3,4,5,6,7"
 
-from resources.data import word_tokenize, SENT_TOKENIZER, HTMLSplitter
+from resources.data import HTMLSplitter
 from typing import Callable, List, Dict
-
-def split_text_in_paragraphs(
-    html: str, 
-    window: int = 512, 
-    tokenize: Callable[[str], List[str]] = word_tokenize
-) -> Dict[str, List]:
-    """
-    Splits HTML text into paragraphs and tokenizes them.
-
-    Args:
-        html (str): The HTML content to process.
-        window (int): Maximum number of tokens per part.
-        tokenize (Callable[[str], List[str]]): Function to tokenize text.
-
-    Returns:
-        dict: A dictionary with parts, paragraphs, tokens, and texts.
-    """
-    parts, paragraphs, tokens, texts = [], [], [], []
-    parser = HTMLSplitter()
-    parser.feed(html)
-    html = parser.get_data()
-
-    part, cursor, remaining_tokens = 0, 0, -1
-    for paragraph_idx, paragraph_text in enumerate(html.split('\n\n')):
-        for start, end in SENT_TOKENIZER.span_tokenize(paragraph_text):
-            sentence_tokens = tokenize(paragraph_text[start:end + 1])
-            remaining_tokens -= len(sentence_tokens) - 1
-
-            if remaining_tokens <= 0:
-                parts.append(str(part))
-                paragraphs.append(str(paragraph_idx))
-                tokens.append(sentence_tokens[:window])
-                texts.append(paragraph_text[start:end + 1])
-                remaining_tokens = window - len(sentence_tokens) + 1
-                part += 1
-                cursor = start
-            else:
-                tokens[-1].extend(sentence_tokens[:window])
-                texts[-1] = paragraph_text[cursor:end + 1]
-
-        remaining_tokens = -1
-
-    return " ".join(texts),{'part': parts, 'paragraph': paragraphs, 'tokens': tokens, 'texts': texts}
 
 def prepare_input(texts,tokenizer,instruction = "", assistant = "", max_input_length = 1024):
     tokenized_instruction = tokenizer.tokenize(instruction)
@@ -112,12 +69,14 @@ efra_summaries_df_subset = efra_summaries_df[efra_summaries_df['post_id'].isin([
 for post_id in efra_summaries_df_subset['post_id']:
     if os.path.exists(os.path.join(english_path, f'{post_id}.html')):
         with open(os.path.join(english_path, f'{post_id}.html'), 'r') as f:
-            txt, parag = split_text_in_paragraphs(f.read())
+            parag = HTMLSplitter()(f.read())
+            txt = " ".join(parag['texts'])
             htmls['english_html'].append(txt)
             htmls['english_paragraphs'].append(parag)
     if os.path.exists(os.path.join(original_path, f'{post_id}.html')):
         with open(os.path.join(original_path, f'{post_id}.html'), 'r') as f:
-            txt, parag = split_text_in_paragraphs(f.read())
+            parag = HTMLSplitter()(f.read())
+            txt = " ".join(parag['texts'])
             htmls['original_html'].append(txt)
             htmls['original_paragraphs'].append(parag)
     htmls['post_id'].append(post_id)

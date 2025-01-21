@@ -4,51 +4,7 @@ import json
 import pandas as pd
 from tqdm import tqdm
 from typing import Callable, List, Dict
-from resources.data import word_tokenize, SENT_TOKENIZER, HTMLSplitter
-
-
-def split_text_in_paragraphs(
-    html: str, 
-    window: int = 512, 
-    tokenize: Callable[[str], List[str]] = word_tokenize
-) -> Dict[str, List]:
-    """
-    Splits HTML text into paragraphs and tokenizes them.
-
-    Args:
-        html (str): The HTML content to process.
-        window (int): Maximum number of tokens per part.
-        tokenize (Callable[[str], List[str]]): Function to tokenize text.
-
-    Returns:
-        dict: A dictionary with parts, paragraphs, tokens, and texts.
-    """
-    parts, paragraphs, tokens, texts = [], [], [], []
-    parser = HTMLSplitter()
-    parser.feed(html)
-    html = parser.get_data()
-
-    part, cursor, remaining_tokens = 0, 0, -1
-    for paragraph_idx, paragraph_text in enumerate(html.split('\n\n')):
-        for start, end in SENT_TOKENIZER.span_tokenize(paragraph_text):
-            sentence_tokens = tokenize(paragraph_text[start:end + 1])
-            remaining_tokens -= len(sentence_tokens) - 1
-
-            if remaining_tokens <= 0:
-                parts.append(str(part))
-                paragraphs.append(str(paragraph_idx))
-                tokens.append(sentence_tokens[:window])
-                texts.append(paragraph_text[start:end + 1])
-                remaining_tokens = window - len(sentence_tokens) + 1
-                part += 1
-                cursor = start
-            else:
-                tokens[-1].extend(sentence_tokens[:window])
-                texts[-1] = paragraph_text[cursor:end + 1]
-
-        remaining_tokens = -1
-
-    return {'part': parts, 'paragraph': paragraphs, 'tokens': tokens, 'texts': texts}
+from resources.data import HTMLSplitter
 
 
 def load_data(data_path: str) -> pd.DataFrame:
@@ -93,7 +49,7 @@ def parse_htmls(
                 with open(html_path, 'r') as file:
                     html_content = file.read()
 
-                paragraphs = split_text_in_paragraphs(html_content)
+                paragraphs = HTMLSplitter()(html_content)
                 parsed[name] = paragraphs
 
         output_path = os.path.join(output_dir, f"parsed_htmls_{batch_start}.json")
