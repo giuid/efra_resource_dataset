@@ -17,33 +17,14 @@ from transformers import PreTrainedTokenizer
 from google.cloud import storage
 from google.oauth2 import service_account
 
-#DATABASE    = 'c-labs1.efra.summaries_migrated', 'efra.summaries_v2_migrated', 'c-labs1.efra.summaries_v3'
-#CREDENTIALS = service_account.Credentials.from_service_account_file('data/service-account-external-efra.json')
-CREDENTIALS = ''
-DATABASE = None
-def query_data(sql:str): return pd.read_gbq(sql, credentials=CREDENTIALS)
-
-def get_unique(columns:Union[str, List[str]], db:int=-1):
-    # make list if necessary:
-    if isinstance(columns, str):
-        columns = [columns,]
-
-    return query_data(f'SELECT DISTINCT {", ".join(columns)} FROM `{DATABASE[db]}`')
-
-def count_values(column:str, values:Union[str, List[str]], db:int=-1):
-    # make list if necessary:
-    if isinstance(values, str):
-        values = [values,]
-
-    return {value:query_data(f'SELECT COUNT({column}) FROM `{DATABASE[db]}` WHERE {column} = "{value}"').values.flatten()[0] for value in values}
-
+DATABASE    = 'c-labs1.efra.summaries_v3'
+CREDENTIALS = service_account.Credentials.from_service_account_file('data/service-account-external-efra.json')
 
 #====================================================================================================#
 # Data processing:                                                                                   #
 #====================================================================================================#
 
 from nltk.tokenize import PunktSentenceTokenizer, word_tokenize
-from google.cloud.storage.bucket import Bucket
 
 SENT_TOKENIZER = PunktSentenceTokenizer()
 
@@ -151,75 +132,25 @@ class HTMLSplitter(HTMLParser):
     def get_data(self):
         return self.text.strip()
 
-def retrieve_url(url:str, window:int, tokenize:Callable[[str], List]=word_tokenize, bucket:Optional[Bucket]=None):
-    parts, paragraphs, tokens, texts = [], [], [], []
+class Data:
+    def __init__(self, url:str="hf://datasets/giuid/efra_legal_dataset/efra.csv"):
+        self.data = pd.read_csv(url)
 
-    # create bucket:
-    if bucket is None:
+    def __getitem__(self, keys):
+        # download data:
+        data = self.data.loc[keys]
+
+        # create bucket:
         client = storage.Client(credentials=CREDENTIALS)
         bucket = client.bucket('c-labs1-efra')
 
-    # retrieve urls:
-    html = str(bucket.blob(url[18:]).download_as_string())
-
-    # parse html:
-    return HTMLSplitter()(html=html, window=window, tokenize=tokenize)
-
-
-def load_data(columns:Union[str, List[str]], window:int, tokenize:Callable[[List[str]], List]=word_tokenize, limit:Optional[int]=None, where:Optional[str]=None, db:int=-1):
-    # make list if necessary:
-    if isinstance(columns, str):
-        columns = [columns,]
-
-    # build query:
-    query = f'SELECT {", ".join(columns)} FROM `{DATABASE[db]}`'
-    if where is not None: query += f' WHERE {where}'
-    if limit is not None: query += f' LIMIT {limit:d}'
-    print(f'SQL query:      "{query};"')
-
-    # download data:
-    data = query_data(query).dropna()
-    print(f'Retrieved data: {len(data):d} posts')
-
-    # create bucket:
-    client = storage.Client(credentials=CREDENTIALS)
-    bucket = client.bucket('c-labs1-efra')
-
-    for _, entry in tqdm(data.iterrows()):
-        result = {}
-        for column in columns:
-            result[column] = entry[column]
-
+        for column in data.columns:
             if column.endswith('_url'):
-                result[column[:-4]] = retrieve_url(url=entry[column], window=window, tokenize=tokenize, bucket=bucket)
-            
-        yield result
+                data[column[:-4]] = ['' if isinstance(url, float) else str(bucket.blob(url[18:]).download_as_string()) for url in tqdm(data[column].values, desc=f'Downloading column "{column[:-4]}"')]
 
-def load_prompts(prompt:str, tokenizer:PreTrainedTokenizer, max_tokens:int, **kwargs):
-    prefix = tokenizer.encode('**Task:**\n\n' + prompt)
-    suffix = tokenizer.encode('\n\n**Summary:**\n\n')[1:]
+        print(f'Retrieved data: {len(data):d} posts')
 
-    for entry in load_data(
-        columns=['post_id', 'english_content_url', 'english_summary'],
-        window=max_tokens - len(prefix) - len(suffix),
-        tokenize=lambda s: tokenizer.encode(s)[1:],
-        **kwargs):
-
-        # add pre and suffix:
-        entry['english_content']['tokens'] = [prefix + t + suffix for t in entry['english_content']['tokens']]
-
-        yield entry
-
-def pad(input_ids:torch.Tensor, tokenizer:PreTrainedTokenizer):
-    batch_size = len(input_ids)
-    seq_length = max([len(ids) for ids in input_ids])
-
-    output = np.ones((batch_size, seq_length), dtype=int) * tokenizer.pad_token_id
-
-    for i, ids in enumerate(input_ids):
-        output[i, -len(ids):] = ids
-
-    return torch.tensor(output, device="cuda")
+        return data
 
 def save_summary(dir:str, df:pd.DataFrame, output_text:List[str], tokenizer:PreTrainedTokenizer, init:bool=False):
     #print('Saving...')
